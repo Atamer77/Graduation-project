@@ -12,7 +12,6 @@ load_dotenv()
 class Config:
     """Single source of truth for all configuration."""
 
-    # ── ML Paths ──────────────────────────────────────────────
     MODEL_PATH = os.getenv("MODEL_PATH", "Artifacts/saved_model.pkl")
     SCALER_PATH = os.getenv("SCALER_PATH", "Artifacts/scaler.pkl")
     ENCODER_PATH = os.getenv("ENCODER_PATH", "Artifacts/label_encoder.pkl")
@@ -21,19 +20,16 @@ class Config:
     LOG_PATH = os.getenv("LOG_PATH", "logs/predictions.log")
     FLOWS_DIR = os.getenv("FLOWS_DIR", "logs/flows")
 
-    # ── ML Thresholds ─────────────────────────────────────────
     CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
 
-    # ── Network ───────────────────────────────────────────────
     NETWORK_INTERFACE = os.getenv("NETWORK_INTERFACE", "eth0")
     CAPTURE_SECS = int(os.getenv("CAPTURE_SECS", "120"))
 
-    # ── Ollama ────────────────────────────────────────────────
     OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi3")
     OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "10"))
 
-    # ── IP Blocker ────────────────────────────────────────────
+    
     ROUTER_IP = os.getenv("ROUTER_IP", "")
     ROUTER_USER = os.getenv("ROUTER_USER", "root")
     SSH_KEY = os.getenv("SSH_KEY", os.path.expanduser("~/.ssh/smart_alert_key"))
@@ -41,18 +37,15 @@ class Config:
     BLOCKED_DB = os.getenv("BLOCKED_DB", "logs/blocked_ips.json")
     BLOCKER_LOG = os.getenv("BLOCKER_LOG", "logs/blocker.log")
 
-    # ── Email ─────────────────────────────────────────────────
     EMAIL_SENDER = os.getenv("EMAIL_SENDER", "")
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
     EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER", "")
     SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
     SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 
-    # ── Telegram ──────────────────────────────────────────────
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-    # ── Security ──────────────────────────────────────────────
     API_KEY = os.getenv("API_KEY", "")
 
     @classmethod
