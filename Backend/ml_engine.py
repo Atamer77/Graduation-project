@@ -1,8 +1,4 @@
-"""
-Smart Alert v4.0 — ML Prediction Engine
-Supports: static CSV mode + live CICFlowMeter mode
-Improvements: confidence thresholds, 3-tier alerts, feature importance
-"""
+
 
 import pandas as pd
 import numpy as np
@@ -19,7 +15,6 @@ from Backend.config import Config
 import logging
 logger = logging.getLogger("smart_alert.ml")
 
-# ── Feature list (30 KBest from CIC-IDS-2017) ───────────────────
 KBEST_FEATURES = [
     'Dst Port', 'Protocol', 'Fwd Packet Length Min', 'Bwd Packet Length Max',
     'Bwd Packet Length Min', 'Bwd Packet Length Mean', 'Bwd Packet Length Std',
@@ -32,7 +27,6 @@ KBEST_FEATURES = [
     'Active Mean', 'Active Min', 'Idle Std'
 ]
 
-# ── Load artifacts once at import ────────────────────────────────
 logger.info("Loading model artifacts...")
 try:
     model = joblib.load(Config.MODEL_PATH)
@@ -45,41 +39,31 @@ except Exception as e:
     print(f"[ML] ERROR loading model: {e}")
     model = scaler = le = None
 
-# ── Shared state ─────────────────────────────────────────────────
 _latest_rows = []
 _latest_counts = {}
 _live_running = False
 _live_lock = threading.Lock()
 
 
-# ══════════════════════════════════════════════════════════════════
-#  CORE PREDICTION
-# ══════════════════════════════════════════════════════════════════
 def predict_dataframe(df: pd.DataFrame) -> list[dict]:
-    """
-    Run the full prediction pipeline on a dataframe.
-    Returns list of result dicts with 3-tier alert levels.
-    """
+   
     if model is None or scaler is None or le is None:
         raise RuntimeError("Model artifacts not loaded. Check file paths in .env")
 
     df.columns = df.columns.str.strip()
 
-    # Extract metadata columns
     meta_cols = ['src_ip', 'dst_ip', 'timespan', 'Src IP', 'Dst IP', 'Timestamp']
     meta = {}
     for col in meta_cols:
         if col in df.columns:
             meta[col] = df[col].copy()
 
-    # Build feature matrix — use scaler mean for missing features (not zero)
     missing = [f for f in KBEST_FEATURES if f not in df.columns]
     if missing:
         logger.warning(f"Missing features {missing} — filling with scaler mean")
 
     X = df.reindex(columns=KBEST_FEATURES).copy()
 
-    # Fill missing features with training mean from scaler (better than zero)
     for i, feat in enumerate(KBEST_FEATURES):
         if feat in missing or X[feat].isna().all():
             X[feat] = scaler.mean_[i]
@@ -87,19 +71,16 @@ def predict_dataframe(df: pd.DataFrame) -> list[dict]:
     X.replace([np.inf, -np.inf], np.nan, inplace=True)
     X.fillna(0, inplace=True)
 
-    # Scale + predict
     X_scaled = scaler.transform(X)
     numeric_preds = model.predict(X_scaled)
     decoded_preds = le.inverse_transform(numeric_preds)
 
-    # Confidence scores
     try:
         proba = model.predict_proba(X_scaled)
         confidence = proba.max(axis=1)
     except AttributeError:
         confidence = np.ones(len(decoded_preds))
 
-    # Build result rows with 3-tier alert levels
     threshold = Config.CONFIDENCE_THRESHOLD
     rows = []
     for i, (pred, conf) in enumerate(zip(decoded_preds, confidence)):
@@ -131,7 +112,6 @@ def predict_dataframe(df: pd.DataFrame) -> list[dict]:
 
 
 def get_feature_importance() -> list[dict]:
-    """Return feature importance sorted descending."""
     if model is None:
         return []
     importance = model.feature_importances_
@@ -142,7 +122,6 @@ def get_feature_importance() -> list[dict]:
     return [{"feature": f, "importance": round(v, 4)} for f, v in pairs[:20]]
 
 
-# ── Helpers ──────────────────────────────────────────────────────
 def _get_meta(meta, *keys, idx, default):
     for k in keys:
         if k in meta:
@@ -178,9 +157,6 @@ def _build_counts(rows: list[dict]) -> dict:
     return dict(sorted(counts.items(), key=lambda x: -x[1]))
 
 
-# ══════════════════════════════════════════════════════════════════
-#  STATIC MODE
-# ══════════════════════════════════════════════════════════════════
 def run_static_prediction(filepath: str = None) -> tuple[list, dict]:
     global _latest_rows, _latest_counts
     path = filepath or Config.DATA_PATH
@@ -203,13 +179,10 @@ def run_static_prediction(filepath: str = None) -> tuple[list, dict]:
     return rows, _latest_counts
 
 
-# ══════════════════════════════════════════════════════════════════
-#  LIVE MODE — CICFlowMeter + Attack Injector (unified)
-# ══════════════════════════════════════════════════════════════════
+
 _injector_thread = None
 
 def _generate_synthetic_benign(columns: list, count: int) -> pd.DataFrame:
-    """Generate realistic BENIGN rows when dataset has none."""
     import random
     rows = []
     for _ in range(count):
@@ -267,7 +240,6 @@ def _generate_synthetic_benign(columns: list, count: int) -> pd.DataFrame:
 
 
 def _run_injector_background():
-    """Background thread: inject mixed traffic (attacks + benign) into live_capture.csv."""
     import random
 
     BENIGN_LABELS = {'benign', 'normal', 'background', 'legitimate'}
@@ -289,7 +261,6 @@ def _run_injector_background():
                 label_col = col
                 break
 
-        # Split into attack / benign
         if label_col:
             attacks = source_df[~source_df[label_col].str.strip().str.lower().isin(BENIGN_LABELS)]
             benign  = source_df[source_df[label_col].str.strip().str.lower().isin(BENIGN_LABELS)]
@@ -297,7 +268,6 @@ def _run_injector_background():
             attacks = source_df
             benign  = pd.DataFrame()
 
-        # Generate synthetic benign if none exist in dataset
         if len(benign) == 0:
             logger.warning("Injector: zero benign rows in dataset — generating synthetic benign traffic")
             print("[INJECTOR] ⚠ No BENIGN in dataset — generating synthetic normal traffic")
@@ -313,7 +283,6 @@ def _run_injector_background():
 
     while _live_running:
         try:
-            # Sample 3-5 rows with ~30% benign mix
             n = random.randint(3, 5)
             n_benign = max(1, int(n * 0.3))
             n_attacks = n - n_benign
@@ -330,7 +299,6 @@ def _run_injector_background():
 
             batch = pd.concat(samples, ignore_index=True)
 
-            # Randomize IPs: attacks get public IPs, benign get internal IPs
             prefixes = [(45, 33), (185, 220), (91, 134), (23, 94), (104, 18),
                         (198, 51), (203, 0), (85, 25), (77, 88)]
             for i in range(len(batch)):
@@ -346,20 +314,16 @@ def _run_injector_background():
                             p = random.choice(prefixes)
                             batch.at[i, col] = f"{p[0]}.{p[1]}.{random.randint(1,254)}.{random.randint(1,254)}"
 
-            # Update timestamps
             now = datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
             for col in ['Timestamp', 'timespan']:
                 if col in batch.columns:
                     batch[col] = now
 
-            # Shuffle so benign and attacks are interleaved
             batch = batch.sample(frac=1).reset_index(drop=True)
 
-            # Append to live_capture.csv
             write_header = not os.path.exists(live_path) or os.path.getsize(live_path) == 0
             batch.to_csv(live_path, mode='a', header=write_header, index=False)
 
-            # Print batch summary
             if label_col and label_col in batch.columns:
                 b_count = batch[label_col].str.strip().str.lower().isin(BENIGN_LABELS).sum()
                 a_count = len(batch) - b_count
@@ -381,11 +345,7 @@ def _run_injector_background():
 
 
 def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
-    """
-    Extract CIC-IDS-2017 compatible flow features from a pcap file using scapy.
-    Groups packets into bidirectional flows (by 5-tuple), then computes
-    the 30 KBest features the model expects.
-    """
+
     try:
         from scapy.all import rdpcap, IP, TCP, UDP, ICMP
     except ImportError:
@@ -401,7 +361,6 @@ def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
     if not packets:
         return pd.DataFrame()
 
-    # Group packets into flows by 5-tuple
     flows = {}
     for pkt in packets:
         if not pkt.haslayer(IP):
@@ -420,7 +379,6 @@ def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
             sport = pkt[UDP].sport
             dport = pkt[UDP].dport
 
-        # Bidirectional flow key (sorted so both directions map to same flow)
         fwd_key = (src, dst, sport, dport, proto)
         rev_key = (dst, src, dport, sport, proto)
 
@@ -434,13 +392,12 @@ def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
     if not flows:
         return pd.DataFrame()
 
-    # Extract features per flow
     import statistics
     all_flow_features = []
 
     for flow_key, pkt_list in flows.items():
         if len(pkt_list) < 2:
-            continue  # Skip single-packet flows
+            continue  
 
         src_ip, dst_ip, sport, dport, proto = flow_key
 
@@ -451,7 +408,6 @@ def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
         bwd_lengths = [len(p) for p in bwd_pkts] or [0]
         all_lengths = fwd_lengths + bwd_lengths
 
-        # Timestamps for IAT (inter-arrival time)
         all_times = sorted([float(p.time) for _, p in pkt_list])
         fwd_times = sorted([float(p.time) for p in fwd_pkts]) if fwd_pkts else []
         bwd_times = sorted([float(p.time) for p in bwd_pkts]) if bwd_pkts else []
@@ -477,7 +433,6 @@ def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
 
         duration = max(all_times) - min(all_times) if len(all_times) > 1 else 0.001
 
-        # Count TCP flags
         fin_count = syn_count = rst_count = 0
         for _, p in pkt_list:
             if p.haslayer(TCP):
@@ -486,7 +441,6 @@ def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
                 if flags & 0x02: syn_count += 1
                 if flags & 0x04: rst_count += 1
 
-        # Build the 30 features matching KBEST_FEATURES
         flow = {
             'Dst Port': dport,
             'Protocol': proto,
@@ -534,13 +488,7 @@ def _extract_features_from_pcap(pcap_path: str) -> pd.DataFrame:
 
 
 def run_live_prediction():
-    """
-    Unified live pipeline:
-      1. Start background attack injector (feeds live_capture.csv)
-      2. Try CICFlowMeter for real network capture
-      3. Also read live_capture.csv incrementally for injected attacks
-    Yields batches of result rows for alert processing.
-    """
+   
     global _live_running, _latest_rows, _latest_counts, _injector_thread
     global _live_csv_last_pos, _live_csv_header
     _live_running = True
@@ -549,11 +497,9 @@ def run_live_prediction():
     os.makedirs(Config.FLOWS_DIR, exist_ok=True)
     logger.info(f"Live mode started — CICFlowMeter + injector")
 
-    # Start background attack injector
     _injector_thread = threading.Thread(target=_run_injector_background, daemon=True)
     _injector_thread.start()
 
-    # Check if tshark (Wireshark) is available for packet capture
     tshark_path = None
     for path in [
         "tshark",
@@ -579,12 +525,10 @@ def run_live_prediction():
     while _live_running:
         all_rows = []
 
-        # ── Source 1: Real traffic (tshark capture → scapy feature extraction) ──
         if tshark_path:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             pcap_file = os.path.join(Config.FLOWS_DIR, f"capture_{ts}.pcap")
 
-            # Step 1: Capture packets with tshark
             try:
                 capture_secs = min(Config.CAPTURE_SECS, 15)
                 subprocess.run(
@@ -599,7 +543,6 @@ def run_live_prediction():
                 logger.error(f"tshark capture error: {e}")
                 print(f"[ML] tshark error: {e}")
 
-            # Step 2: Extract features from pcap using scapy (pure Python, no cicflowmeter)
             if os.path.exists(pcap_file) and os.path.getsize(pcap_file) > 100:
                 try:
                     df = _extract_features_from_pcap(pcap_file)
@@ -614,14 +557,12 @@ def run_live_prediction():
                     logger.error(f"Feature extraction error: {e}")
                     print(f"[ML] Feature extraction error: {e}")
 
-            # Cleanup pcap
             try:
                 if os.path.exists(pcap_file):
                     os.remove(pcap_file)
             except Exception:
                 pass
 
-        # ── Source 2: Injected attacks from live_capture.csv ─────
         live_path = Config.LIVE_CSV
         try:
             if os.path.exists(live_path):
@@ -648,7 +589,6 @@ def run_live_prediction():
         except Exception as e:
             logger.error(f"Live CSV read error: {e}")
 
-        # ── Merge results and yield ──────────────────────────────
         if all_rows:
             with _live_lock:
                 _latest_rows = (all_rows + _latest_rows)[:5000]
@@ -690,9 +630,7 @@ def _cleanup_flows():
         pass
 
 
-# ══════════════════════════════════════════════════════════════════
-#  CSV SAFE READER (3-fallback)
-# ══════════════════════════════════════════════════════════════════
+
 def _safe_read_csv(path: str) -> pd.DataFrame:
     try:
         return pd.read_csv(path)
@@ -729,19 +667,11 @@ def _safe_read_csv(path: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# ══════════════════════════════════════════════════════════════════
-#  LIVE CSV MODE — reads live_capture.csv incrementally
-#  (used by attack_injector.py demo flow)
-# ══════════════════════════════════════════════════════════════════
-_live_csv_last_pos = 0    # byte offset — tracks where we left off
-_live_csv_header = None   # cached header from first read
+_live_csv_last_pos = 0    
+_live_csv_header = None   
 
 def run_live_csv_prediction():
-    """
-    Generator: watches Config.LIVE_CSV for new rows appended by
-    attack_injector.py. Only processes NEW rows each cycle.
-    Yields batches of result rows for alert processing.
-    """
+  
     global _live_running, _latest_rows, _latest_counts
     global _live_csv_last_pos, _live_csv_header
     _live_running = True
@@ -760,14 +690,11 @@ def run_live_csv_prediction():
 
             file_size = os.path.getsize(live_path)
             if file_size <= _live_csv_last_pos:
-                # No new data yet
                 time.sleep(2)
                 continue
 
-            # Read only the NEW bytes since last position
             with open(live_path, 'r', encoding='utf-8') as f:
                 if _live_csv_header is None:
-                    # First read — grab header
                     _live_csv_header = f.readline().strip()
                     _live_csv_last_pos = f.tell()
                     continue
@@ -780,7 +707,6 @@ def run_live_csv_prediction():
                 time.sleep(2)
                 continue
 
-            # Parse the new lines using the cached header
             import io
             csv_text = _live_csv_header + '\n' + ''.join(new_lines)
             df = pd.read_csv(io.StringIO(csv_text))
@@ -819,7 +745,6 @@ def reset_live_csv_reader():
     _live_csv_header = None
 
 
-# ── CLI test ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     rows, counts = run_static_prediction()
     print(f"\nPrediction counts ({len(rows)} total):")
