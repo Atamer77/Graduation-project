@@ -1,8 +1,4 @@
-"""
-Smart Alert v4.0 — Ollama Recommendation Engine
-Uses local LLM for SOC remediation advice.
-Falls back to static recommendations if Ollama unavailable.
-"""
+
 
 
 import requests
@@ -12,10 +8,8 @@ from Backend.config import Config
 
 logger = logging.getLogger("smart_alert.ollama")
 
-# 🔥 FORCE MODEL HERE (no more mismatch issues)
 OLLAMA_MODEL = "phi3:mini"
 
-# ── Static fallback recommendations ───────────────────────────────
 STATIC_RECS = {
     "DDoS": (
         "• Enable rate limiting on the upstream firewall (max 1000 req/s per source IP)\n"
@@ -98,7 +92,6 @@ DEFAULT_REC = (
     "• Escalate to senior SOC analyst if activity persists"
 )
 
-# 🔥 STRONGER PROMPT
 SYSTEM_PROMPT = (
     "You are a senior SOC analyst working in a real Security Operations Center.\n"
     "\n"
@@ -175,7 +168,7 @@ def _query_ollama(attack_type, src_ip, dst_port, confidence):
         )
 
         print("[DEBUG] STATUS:", response.status_code)
-        print("[DEBUG] RESPONSE:", response.text[:200])  # first 200 chars
+        print("[DEBUG] RESPONSE:", response.text[:200])  
 
         response.raise_for_status()
 
