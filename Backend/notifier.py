@@ -1,8 +1,4 @@
-"""
-Smart Alert v4.0 — Notification Module
-Handles Email (SMTP/Gmail) + Telegram Bot alerts.
-Reads config at call time so settings changes take effect without restart.
-"""
+
 
 import smtplib
 import requests
@@ -15,12 +11,8 @@ from Backend.config import Config
 logger = logging.getLogger("smart_alert.notifier")
 
 
-# ══════════════════════════════════════════════════════════════════
-#  EMAIL
-# ══════════════════════════════════════════════════════════════════
+
 def send_email_alert(attack_rows: list[dict]) -> bool:
-    """Send an HTML email report for attack rows. Returns True on success."""
-    # Read config at call time (supports hot-reload)
     sender = Config.EMAIL_SENDER
     password = Config.EMAIL_PASSWORD
     receiver = Config.EMAIL_RECEIVER
@@ -156,16 +148,13 @@ def _build_email_html(rows: list[dict]) -> str:
     </div></body></html>"""
 
 
-# ══════════════════════════════════════════════════════════════════
-#  TELEGRAM
-# ══════════════════════════════════════════════════════════════════
+
 def send_telegram_alert(message: str) -> bool:
     import requests
 
     try:
-        # 🔒 Force safe message
         if not message or not str(message).strip():
-            message = "🚨 SMART_ALERT: Test message"
+            message = " SMART_ALERT: Test message"
 
         message = str(message)
 
@@ -178,7 +167,7 @@ def send_telegram_alert(message: str) -> bool:
 
         response = requests.post(url, data=payload, timeout=10)
 
-        print("Telegram response:", response.text)  # 🔥 DEBUG
+        print("Telegram response:", response.text)  # 🔥 
 
         response.raise_for_status()
         return True
@@ -187,7 +176,6 @@ def send_telegram_alert(message: str) -> bool:
         print("[TELEGRAM ERROR]:", e)
         return False
 
-# ── CLI test ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     test_rows = [
         {
