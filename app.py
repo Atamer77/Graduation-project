@@ -28,7 +28,6 @@ app = Flask(__name__)
 CORS(app)
 
 class BoundedSet:
-    """Set with a max size — evicts oldest entries when full."""
     def __init__(self, maxsize=10000):
         self._data = OrderedDict()
         self._maxsize = maxsize
@@ -51,12 +50,10 @@ START_TIME = datetime.now()
 
 
 def require_auth(f):
-    """Protect sensitive endpoints with Bearer token from .env API_KEY."""
     @wraps(f)
     def decorated(*args, **kwargs):
         api_key = Config.API_KEY
         if not api_key:
-            # No key configured → skip auth (dev mode)
             return f(*args, **kwargs)
         token = request.headers.get("Authorization", "")
         if token.startswith("Bearer "):
@@ -90,7 +87,6 @@ def health():
 
 @app.route("/api/results")
 def api_results():
-    """Return latest predictions + counts with pagination."""
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
     filter_type = request.args.get("filter", "all")
@@ -181,7 +177,6 @@ def api_stop_live():
 
 
 def _live_loop():
-    """Wrapper that auto-processes alerts from live captures."""
     for rows in run_live_prediction():
         _process_alerts(rows)
 
@@ -302,11 +297,7 @@ def api_save_settings():
 
 
 def ai_decide(ip: str, attack_type: str, confidence: float) -> str:
-    """
-    Ask Ollama LLM whether to block, monitor, or ignore this IP.
-    Returns: "block", "monitor", or "ignore".
-    Falls back to "block" if Ollama is unavailable (fail-safe).
-    """
+    
     prompt = f"""You are a cybersecurity analyst in a Security Operations Center.
 
 Attack detected:
@@ -350,13 +341,7 @@ Return ONLY one word."""
 
 
 def safe_execute(ip: str, decision: str, confidence: float, attack_type: str = "Unknown"):
-    """
-    Safety layer between AI decision and actual blocking.
-    Rules:
-      - NEVER block private/loopback IPs (127.x, 192.168.x, 10.x)
-      - Only block if decision == "block" AND confidence > 0.7
-      - "monitor" / "ignore" → log only, no block
-    """
+   
     import ipaddress as _ipa
 
     try:
@@ -380,7 +365,6 @@ def safe_execute(ip: str, decision: str, confidence: float, attack_type: str = "
 
 
 def _process_alerts(rows):
-    """Auto-block + notify for new attack rows (high severity only)."""
     attack_rows = [r for r in rows if r.get("alert_level") == "high"]
 
     new_attacks = []
