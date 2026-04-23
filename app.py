@@ -1,7 +1,4 @@
-"""
-Smart Alert v4.0 — Production Flask Backend
-ML-based IDS with XGBoost, Ollama LLM, IP Blocking, Email + Telegram alerts
-"""
+
 
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
@@ -15,7 +12,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Internal modules ─────────────────────────────────────────────
 from Backend.ml_engine import (
     run_static_prediction, run_live_prediction,
     stop_live, get_latest_results, is_live_running
@@ -28,11 +24,9 @@ from Backend.config import Config
 import logging
 logger = logging.getLogger("smart_alert")
 
-# ── App ──────────────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
 
-# ── Bounded dedup set ────────────────────────────────────────────
 class BoundedSet:
     """Set with a max size — evicts oldest entries when full."""
     def __init__(self, maxsize=10000):
@@ -55,9 +49,7 @@ pipeline_lock = threading.Lock()
 START_TIME = datetime.now()
 
 
-# ══════════════════════════════════════════════════════════════════
-#  AUTH DECORATOR
-# ══════════════════════════════════════════════════════════════════
+
 def require_auth(f):
     """Protect sensitive endpoints with Bearer token from .env API_KEY."""
     @wraps(f)
@@ -75,17 +67,13 @@ def require_auth(f):
     return decorated
 
 
-# ══════════════════════════════════════════════════════════════════
-#  PAGES
-# ══════════════════════════════════════════════════════════════════
+
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
-# ══════════════════════════════════════════════════════════════════
-#  HEALTH CHECK
-# ══════════════════════════════════════════════════════════════════
+
 @app.route("/health")
 def health():
     rows, counts = get_latest_results()
@@ -99,9 +87,7 @@ def health():
     })
 
 
-# ══════════════════════════════════════════════════════════════════
-#  DATA ENDPOINTS
-# ══════════════════════════════════════════════════════════════════
+
 @app.route("/api/results")
 def api_results():
     """Return latest predictions + counts with pagination."""
@@ -111,7 +97,6 @@ def api_results():
 
     rows, counts = get_latest_results()
 
-    # Apply filter
     if filter_type and filter_type != "all":
         rows = [r for r in rows if r.get("prediction") == filter_type]
 
@@ -123,7 +108,7 @@ def api_results():
 
     return jsonify({
         "rows": page_rows,
-        "all_rows": rows[:500],  # For charts (capped)
+        "all_rows": rows[:500],  
         "counts": counts,
         "mode": pipeline_mode,
         "pagination": {
@@ -161,9 +146,7 @@ def api_feature_importance():
         return jsonify({"error": str(e)}), 500
 
 
-# ══════════════════════════════════════════════════════════════════
-#  PIPELINE CONTROL
-# ══════════════════════════════════════════════════════════════════
+
 @app.route("/api/run_static", methods=["POST"])
 def api_run_static():
     global pipeline_mode
@@ -204,9 +187,6 @@ def _live_loop():
 
 
 
-# ══════════════════════════════════════════════════════════════════
-#  IP BLOCKER
-# ══════════════════════════════════════════════════════════════════
 @app.route("/api/block", methods=["POST"])
 def api_block():
     data = request.get_json()
@@ -228,9 +208,7 @@ def api_unblock():
     return jsonify({"ok": ok, "ip": ip})
 
 
-# ══════════════════════════════════════════════════════════════════
-#  AI RECOMMENDATIONS
-# ══════════════════════════════════════════════════════════════════
+
 @app.route("/api/recommend", methods=["POST"])
 def api_recommend():
     data = request.get_json()
@@ -242,9 +220,7 @@ def api_recommend():
     return jsonify({"recommendation": rec})
 
 
-# ══════════════════════════════════════════════════════════════════
-#  NOTIFICATIONS (manual trigger)
-# ══════════════════════════════════════════════════════════════════
+
 @app.route("/api/send_email", methods=["POST"])
 def api_send_email():
     rows, _ = get_latest_results()
@@ -267,9 +243,7 @@ def api_send_telegram():
     return jsonify({"ok": ok})
 
 
-# ══════════════════════════════════════════════════════════════════
-#  SETTINGS (AUTH REQUIRED)
-# ══════════════════════════════════════════════════════════════════
+
 @app.route("/api/settings", methods=["GET"])
 def api_get_settings():
     """Return non-secret settings for the UI."""
@@ -327,9 +301,6 @@ def api_save_settings():
     return jsonify({"ok": True})
 
 
-# ══════════════════════════════════════════════════════════════════
-#  AI-ASSISTED BLOCKING (Ollama integration layer)
-# ══════════════════════════════════════════════════════════════════
 def ai_decide(ip: str, attack_type: str, confidence: float) -> str:
     """
     Ask Ollama LLM whether to block, monitor, or ignore this IP.
@@ -365,18 +336,15 @@ Return ONLY one word."""
         response.raise_for_status()
         raw = response.json().get("response", "").strip().lower()
 
-        # Extract the decision word from the response
         for word in ["block", "monitor", "ignore"]:
             if word in raw:
                 logger.info(f"AI decision: {word} for IP {ip} ({attack_type}, conf={confidence})")
                 return word
 
-        # LLM returned something unexpected — default to block for safety
         logger.warning(f"AI returned unclear response '{raw}' for {ip} — defaulting to block")
         return "block"
 
     except Exception as e:
-        # Ollama unavailable — fail-safe: block the IP
         logger.warning(f"AI decision failed for {ip}: {e} — fallback to block")
         return "block"
 
@@ -391,7 +359,6 @@ def safe_execute(ip: str, decision: str, confidence: float, attack_type: str = "
     """
     import ipaddress as _ipa
 
-    # Safety: never block private or loopback
     try:
         addr = _ipa.ip_address(ip.strip())
         if addr.is_private or addr.is_loopback or addr.is_reserved:
@@ -406,17 +373,12 @@ def safe_execute(ip: str, decision: str, confidence: float, attack_type: str = "
         block_ip(ip, attack_type)
     elif decision == "monitor":
         logger.info(f"Safe-execute: MONITORING {ip} — AI said monitor (conf={confidence:.3f})")
-        # No block, just logged for SOC review
     elif decision == "ignore":
         logger.info(f"Safe-execute: IGNORED {ip} — AI said ignore (conf={confidence:.3f})")
     else:
-        # Decision was "block" but confidence too low
         logger.info(f"Safe-execute: skipped {ip} — AI={decision} but conf={confidence:.3f} < 0.7")
 
 
-# ══════════════════════════════════════════════════════════════════
-#  HELPERS
-# ══════════════════════════════════════════════════════════════════
 def _process_alerts(rows):
     """Auto-block + notify for new attack rows (high severity only)."""
     attack_rows = [r for r in rows if r.get("alert_level") == "high"]
@@ -432,11 +394,9 @@ def _process_alerts(rows):
             if src and src != "unknown":
                 conf = r.get("confidence", 0.9)
                 if conf >= 0.95:
-                    # High confidence — block directly, skip AI delay
                     logger.info(f"Auto-block (conf={conf:.3f}): {src} ({r['prediction']})")
                     safe_execute(src, "block", conf, r["prediction"])
                 else:
-                    # Borderline — ask AI for decision
                     decision = ai_decide(src, r["prediction"], conf)
                     safe_execute(src, decision, conf, r["prediction"])
 
@@ -446,7 +406,7 @@ def _process_alerts(rows):
         ).start()
         for r in new_attacks[:5]:
             msg = (
-                f"🚨 {r['prediction']}\n"
+                f" {r['prediction']}\n"
                 f"Src: {r.get('src_ip', '?')}  Port: {r.get('dst_port', '?')}\n"
                 f"Confidence: {r.get('confidence', '?')}"
             )
@@ -475,9 +435,7 @@ def _check_ollama():
         return False
 
 
-# ══════════════════════════════════════════════════════════════════
-#  MAIN
-# ══════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     print("=" * 55)
     print("  Smart Alert v4.0 — ML-Based IDS Dashboard")
