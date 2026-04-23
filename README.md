@@ -1,5 +1,5 @@
-venv\Scripts\activate---python app.py --remove cache of backend and remove the files under flow folder then run
-# 🛡 Smart Alert v4.0 — AI-Powered Intrusion Detection & Prevention System
+
+# 🛡 Smart Alert  — AI-Powered Intrusion Detection & Prevention System
 
 A real-time network intrusion detection and prevention system powered by XGBoost machine learning and Ollama AI decision-making, with automated cross-platform IP blocking, email/Telegram alerting, and AI-powered remediation recommendations.
 
