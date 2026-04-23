@@ -1,11 +1,4 @@
-"""
-Smart Alert v4.0 — IP Blocker
-Cross-platform local firewall blocking:
-  • Linux  → iptables (via sudo)
-  • Windows → netsh advfirewall
-HARDENED: IP validation prevents command injection.
-Falls back to demo mode (DB-only) if firewall commands fail.
-"""
+
 
 import subprocess
 import platform
@@ -18,10 +11,8 @@ from datetime import datetime
 
 from Backend.config import Config
 
-# ── OS Detection (done once at import) ───────────────────────────
-OS_TYPE = platform.system()  # "Linux", "Windows", "Darwin", etc.
+OS_TYPE = platform.system()  
 
-# ── Logging ───────────────────────────────────────────────────────
 os.makedirs(os.path.dirname(Config.BLOCKER_LOG) if os.path.dirname(Config.BLOCKER_LOG) else "logs", exist_ok=True)
 
 logger = logging.getLogger("smart_alert.blocker")
@@ -33,18 +24,12 @@ logger.setLevel(logging.INFO)
 logger.info(f"IP Blocker initialized | OS: {OS_TYPE}")
 print(f"[BLOCKER] OS detected: {OS_TYPE}")
 
-# ── Thread-safe DB lock ───────────────────────────────────────────
 _db_lock = threading.Lock()
 
 
-# ══════════════════════════════════════════════════════════════════
-#  IP VALIDATION (prevents command injection)
-# ══════════════════════════════════════════════════════════════════
+
 def validate_ip(ip: str) -> tuple[bool, str]:
-    """
-    Strictly validate an IP address string.
-    Returns (is_valid, reason).
-    """
+   
     ip = ip.strip()
     if not ip:
         return False, "Empty IP address"
@@ -68,9 +53,7 @@ def validate_ip(ip: str) -> tuple[bool, str]:
     return True, "valid"
 
 
-# ══════════════════════════════════════════════════════════════════
-#  DATABASE (unchanged)
-# ══════════════════════════════════════════════════════════════════
+
 def _load_db() -> dict:
     try:
         with open(Config.BLOCKED_DB) as f:
@@ -87,32 +70,17 @@ def _save_db(db: dict):
         json.dump(db, f, indent=2)
 
 
-# ══════════════════════════════════════════════════════════════════
-#  SSH HELPER (legacy — kept for reference, NO LONGER CALLED)
-# ══════════════════════════════════════════════════════════════════
+
 def _ssh(command: str) -> bool:
-    """
-    [LEGACY] Run a shell command on a remote router via SSH.
-    Replaced by _firewall_block / _firewall_unblock.
-    Kept in file for backward compatibility — not called anywhere.
-    """
+
     logger.warning("_ssh() called but SSH blocking is disabled — use local firewall instead")
     return False
 
 
-# ══════════════════════════════════════════════════════════════════
-#  LOCAL FIREWALL — CROSS-PLATFORM
-# ══════════════════════════════════════════════════════════════════
 def _firewall_block(ip: str) -> bool:
-    """
-    Block an IP using the local OS firewall.
-    Linux   → sudo iptables -A INPUT -s <IP> -j DROP
-    Windows → netsh advfirewall firewall add rule ...
-    Returns True on success, False on failure (demo mode continues).
-    """
+   
     try:
         if OS_TYPE == "Linux":
-            # Check if rule already exists (avoid duplicates)
             check = subprocess.run(
                 ["sudo", "iptables", "-C", "INPUT", "-s", ip, "-j", "DROP"],
                 capture_output=True, text=True, timeout=10
@@ -121,12 +89,10 @@ def _firewall_block(ip: str) -> bool:
                 logger.info(f"iptables rule already exists for {ip} — skipping")
                 return True
 
-            # Add INPUT rule
             subprocess.run(
                 ["sudo", "iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"],
                 capture_output=True, text=True, check=True, timeout=10
             )
-            # Add FORWARD rule (for gateway setups)
             subprocess.run(
                 ["sudo", "iptables", "-A", "FORWARD", "-s", ip, "-j", "DROP"],
                 capture_output=True, text=True, timeout=10
@@ -136,7 +102,6 @@ def _firewall_block(ip: str) -> bool:
 
         elif OS_TYPE == "Windows":
             rule_name = f"SmartAlert_Block_{ip}"
-            # Add inbound block rule
             subprocess.run(
                 [
                     "netsh", "advfirewall", "firewall", "add", "rule",
@@ -150,7 +115,6 @@ def _firewall_block(ip: str) -> bool:
             return True
 
         else:
-            # macOS / other — no native firewall CLI support
             logger.warning(f"Unsupported OS '{OS_TYPE}' — demo mode (no firewall rule applied)")
             return False
 
@@ -179,20 +143,13 @@ def _firewall_block(ip: str) -> bool:
 
 
 def _firewall_unblock(ip: str) -> bool:
-    """
-    Remove firewall block for an IP using the local OS firewall.
-    Linux   → sudo iptables -D INPUT -s <IP> -j DROP
-    Windows → netsh advfirewall firewall delete rule name="SmartAlert_Block_<IP>"
-    Returns True on success.
-    """
+ 
     try:
         if OS_TYPE == "Linux":
-            # Remove INPUT rule
             subprocess.run(
                 ["sudo", "iptables", "-D", "INPUT", "-s", ip, "-j", "DROP"],
                 capture_output=True, text=True, timeout=10
             )
-            # Remove FORWARD rule (ignore error if it doesn't exist)
             subprocess.run(
                 ["sudo", "iptables", "-D", "FORWARD", "-s", ip, "-j", "DROP"],
                 capture_output=True, text=True, timeout=10
@@ -231,19 +188,10 @@ def _firewall_unblock(ip: str) -> bool:
         return False
 
 
-# ══════════════════════════════════════════════════════════════════
-#  PUBLIC API (same signatures as before)
-# ══════════════════════════════════════════════════════════════════
 def block_ip(ip: str, attack_type: str = "Unknown") -> tuple[bool, str]:
-    """
-    Block an IP using local firewall and schedule auto-unblock.
-    Returns (success: bool, message: str).
-    If the firewall command fails, the IP is still stored in the DB
-    (demo mode) so the dashboard and auto-unblock still work.
-    """
+  
     ip = ip.strip()
 
-    # VALIDATE — prevents command injection
     valid, reason = validate_ip(ip)
     if not valid:
         logger.info(f"Block rejected: {reason}")
@@ -255,10 +203,8 @@ def block_ip(ip: str, attack_type: str = "Unknown") -> tuple[bool, str]:
             logger.info(f"Already blocked: {ip}")
             return True, "Already blocked"
 
-        # Apply local firewall rule (graceful — never crashes)
         fw_ok = _firewall_block(ip)
 
-        # Persist to DB regardless of firewall result (demo-safe)
         unblock_at = datetime.now().timestamp() + Config.BLOCK_DURATION
         db[ip] = {
             "attack_type": attack_type,
@@ -278,7 +224,6 @@ def block_ip(ip: str, attack_type: str = "Unknown") -> tuple[bool, str]:
     print(f"[BLOCKER] Blocked {ip} ({attack_type}) — auto-unblock in {Config.BLOCK_DURATION // 60}m"
           f"{'' if fw_ok else ' [demo]'}")
 
-    # Schedule auto-unblock
     timer = threading.Timer(Config.BLOCK_DURATION, unblock_ip, args=[ip])
     timer.daemon = True
     timer.start()
@@ -287,7 +232,7 @@ def block_ip(ip: str, attack_type: str = "Unknown") -> tuple[bool, str]:
 
 
 def unblock_ip(ip: str) -> bool:
-    """Remove the block for an IP from the firewall and DB."""
+    
     ip = ip.strip()
 
     with _db_lock:
@@ -296,7 +241,6 @@ def unblock_ip(ip: str) -> bool:
             logger.warning(f"Unblock requested for unknown IP: {ip}")
             return False
 
-        # Remove firewall rule (graceful — DB is cleaned regardless)
         _firewall_unblock(ip)
 
         db.pop(ip, None)
@@ -308,7 +252,7 @@ def unblock_ip(ip: str) -> bool:
 
 
 def get_blocked_ips() -> list[dict]:
-    """Return current blocked IPs with live remaining seconds."""
+    
     now = datetime.now().timestamp()
     with _db_lock:
         db = _load_db()
@@ -326,7 +270,7 @@ def get_blocked_ips() -> list[dict]:
 
 
 def _restore_blocks_on_startup():
-    """Re-schedules unblock timers for IPs blocked before restart."""
+    
     now = datetime.now().timestamp()
     with _db_lock:
         db = _load_db()
@@ -342,5 +286,4 @@ def _restore_blocks_on_startup():
             unblock_ip(ip)
 
 
-# ── Run at import ────────────────────────────────────────────────
 _restore_blocks_on_startup()
