@@ -10,10 +10,10 @@ import argparse
 from datetime import datetime
 
 
-# ── Config ───────────────────────────────────────────────────────
+
 SOURCE_CSV   = os.getenv("DATA_PATH", "Artifacts/merged_test_data.csv")
 LIVE_CSV     = os.getenv("LIVE_CSV", "live_capture.csv")
-BENIGN_RATIO = 0.3   # 30% benign rows mixed in for realism
+BENIGN_RATIO = 0.3   
 
 
 def load_attack_pool(path: str) -> pd.DataFrame:
@@ -26,7 +26,7 @@ def load_attack_pool(path: str) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     print(f"[INJECTOR] Loaded {len(df)} rows from {path}")
 
-    # Identify label column
+   
     label_col = None
     for col in ['Label', 'label', 'LABEL']:
         if col in df.columns:
@@ -38,7 +38,7 @@ def load_attack_pool(path: str) -> pd.DataFrame:
         benign  = df[df[label_col].str.upper() == 'BENIGN']
         print(f"[INJECTOR] Attack pool: {len(attacks)} rows, Benign pool: {len(benign)} rows")
     else:
-        # No label column — treat all as attack pool
+   
         attacks = df
         benign  = pd.DataFrame()
         print(f"[INJECTOR] No Label column found — using all {len(df)} rows as pool")
@@ -48,7 +48,7 @@ def load_attack_pool(path: str) -> pd.DataFrame:
 
 def randomize_ip() -> str:
     """Generate a random public-looking IP for demo purposes."""
-    # Mix of realistic-looking external IPs
+    
     prefixes = [
         (45, 33), (185, 220), (91, 134), (23, 94), (104, 18),
         (198, 51), (203, 0), (85, 25), (77, 88), (62, 210),
@@ -62,7 +62,6 @@ def randomize_ip() -> str:
 def inject_batch(attacks: pd.DataFrame, benign: pd.DataFrame,
                  count: int, live_csv: str):
     """Sample attack rows, randomize IPs, append to live CSV."""
-    # Sample attacks
     n_attacks = max(1, int(count * (1 - BENIGN_RATIO)))
     n_benign  = count - n_attacks
 
@@ -82,24 +81,20 @@ def inject_batch(attacks: pd.DataFrame, benign: pd.DataFrame,
 
     batch = pd.concat(samples, ignore_index=True)
 
-    # Randomize source IPs
     if 'Src IP' in batch.columns:
         batch['Src IP'] = [randomize_ip() for _ in range(len(batch))]
     if 'src_ip' in batch.columns:
         batch['src_ip'] = [randomize_ip() for _ in range(len(batch))]
 
-    # Update timestamps
     now = datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
     if 'Timestamp' in batch.columns:
         batch['Timestamp'] = now
     if 'timespan' in batch.columns:
         batch['timespan'] = now
 
-    # Append to live CSV (create with header if new, else headerless append)
     write_header = not os.path.exists(live_csv) or os.path.getsize(live_csv) == 0
     batch.to_csv(live_csv, mode='a', header=write_header, index=False)
 
-    # Summarize what was injected
     if 'Label' in batch.columns:
         attack_types = batch[batch['Label'].str.upper() != 'BENIGN']['Label'].value_counts()
         type_str = ', '.join(f"{k}({v})" for k, v in attack_types.items())
