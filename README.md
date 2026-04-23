@@ -339,22 +339,13 @@ Click **▶ Run Static** in the dashboard. Processes 5,170 flows from `merged_te
 python app.py
 ```
 
-**Terminal 2:**
-```bash
-python attack_injector.py --count 3 --interval 5
-```
 
-**Browser:** click **⬡ Demo Live** (purple button). The dashboard auto-refreshes as attacks get injected, detected, and blocked in real time.
 
 ### Real Live Mode (With CICFlowMeter)
 
 Install CICFlowMeter:
 
-**Linux:**
-```bash
-sudo apt install libpcap-dev
-pip install cicflowmeter
-```
+
 
 **Windows:**
 Install Npcap from https://npcap.com, then:
